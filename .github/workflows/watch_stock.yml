@@ -3,7 +3,7 @@ name: Watch Steam Deck Stock
 on:
   schedule:
     # runs every 5 minutes — ajusta según prefieras
-    - cron: '*/5 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
 jobs:
