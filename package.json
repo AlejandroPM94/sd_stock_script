@@ -1,0 +1,17 @@
+{
+  "name": "sd_stock_script",
+  "version": "1.0.0",
+  "description": "Watcher para stock de Steam Deck",
+  "main": "sd_stock_script.js",
+  "scripts": {
+    "start": "node watch_stock.js"
+  },
+  "dependencies": {
+    "node-notifier": "^10.0.0",
+    "axios": "^1.4.0",
+    "puppeteer": "^20.7.0"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

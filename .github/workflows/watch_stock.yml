@@ -1,0 +1,37 @@
+name: Watch Steam Deck Stock
+
+on:
+  schedule:
+    # runs every 15 minutes — ajusta según prefieras
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  run-watcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Inject cookies (optional)
+        run: |
+          if [ -n "${{ secrets.COOKIES_JSON_BASE64 }}" ]; then
+            echo "Writing cookies.json from secret";
+            echo "${{ secrets.COOKIES_JSON_BASE64 }}" | base64 --decode > cookies.json;
+          else
+            echo "No cookies secret provided; skipping.";
+          fi
+      - name: Run stock check
+        env:
+          HEADLESS: 'true'
+          INTERVAL_MINUTES: '15'
+          ALERT_THROTTLE_MIN: '30'
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FAIL_IF_NOT_LOGGED: ${{ secrets.FAIL_IF_NOT_LOGGED }}
+        run: |
+          node watch_stock.js

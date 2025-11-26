@@ -1,0 +1,6 @@
+# Ignorar cookies y perfiles locales
+cookies.json
+puppeter_profile/
+
+# Node modules (si aplicable)
+node_modules/
