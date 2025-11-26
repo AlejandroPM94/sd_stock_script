@@ -4,3 +4,6 @@ puppeter_profile/
 
 # Node modules (si aplicable)
 node_modules/
+
+# Local environment file (contains secrets)
+.env

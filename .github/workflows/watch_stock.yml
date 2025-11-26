@@ -9,6 +9,9 @@ on:
 jobs:
   run-watcher:
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -34,4 +37,11 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FAIL_IF_NOT_LOGGED: ${{ secrets.FAIL_IF_NOT_LOGGED }}
         run: |
-          node watch_stock.js
+          node check_stock.js
+      - name: Upload log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check_stock-log-${{ github.run_id }}
+          path: watch_log.txt
+          retention-days: 30

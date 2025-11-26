@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer');
 
 const URL = 'https://store.steampowered.com/sale/steamdeckrefurbished';
 
-async function fetchStock(url) {
+async function fetchStock(url = URL) {
     // Opciones para soporte de sesión
     const userDataDir = process.env.USER_DATA_DIR; // si se proporciona, Puppeteer usará este perfil (permite sesión persistente)
     const cookiesFile = process.env.COOKIES_FILE || 'cookies.json'; // si existe, cargaremos cookies
@@ -34,7 +34,9 @@ async function fetchStock(url) {
         }
     }
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36');
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    const targetUrl = url || URL;
+    console.log('Navegando a:', targetUrl);
+    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     // Si se desea iniciar sesión manualmente, soportar modo interactivo:
     // - si se define WAIT_SELECTOR, esperará a ese selector (útil para detectar elemento de cuenta)
     // - si se define WAIT_FOR_LOGIN=true, esperará a que el usuario pulse ENTER en la terminal
