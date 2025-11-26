@@ -55,6 +55,17 @@ async function notifyTelegram(title, message) {
   try {
     log('Comprobación única: iniciando...');
     const items = await fetchStock();
+
+    // Si el módulo de scraping indicó explícitamente falta de sesión mediante
+    // `process.exitCode = 4` (versión previa) o lanzó un error (versión actual),
+    // asegurarnos de notificar por Telegram sobre el fallo de login.
+    if (process.exitCode === 4) {
+      const msg = 'Fallo de login: no se detectó sesión en Steam (FAIL_IF_NOT_LOGGED)';
+      log('Detectado FAIL_IF_NOT_LOGGED en fetchStock. Enviando notificación.');
+      await notifyTelegram('Login requerido', msg);
+      // Mantener exit code 4 para visibilidad en CI
+      return;
+    }
     if (!items) {
       log('No se obtuvieron items. Posible error en la carga.');
       await notifyTelegram('Error al comprobar stock', 'No se obtuvieron items');

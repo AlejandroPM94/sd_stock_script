@@ -23,10 +23,40 @@ async function fetchStock(url = URL) {
             const fs = require('fs');
             if (fs.existsSync(cookiesFile)) {
                 const raw = fs.readFileSync(cookiesFile, 'utf8');
-                const cookies = JSON.parse(raw);
+                let cookies = JSON.parse(raw);
                 if (Array.isArray(cookies) && cookies.length) {
-                    await page.setCookie(...cookies);
-                    console.log('Cookies cargadas desde', cookiesFile);
+                    // Normalizar formatos: asegurarse de que expires sea entero o no esté definido
+                    cookies = cookies.map(c => ({
+                        name: c.name,
+                        value: c.value,
+                        domain: c.domain,
+                        path: c.path || '/',
+                        expires: (c.expires && !isNaN(c.expires) && Number(c.expires) > 0) ? Math.floor(Number(c.expires)) : undefined,
+                        httpOnly: !!c.httpOnly,
+                        secure: !!c.secure,
+                        sameSite: c.sameSite
+                    }));
+
+                    // Navegar al dominio del primer cookie antes de aplicar cookies para asegurar que se puedan establecer correctamente
+                    try {
+                        const firstDomain = cookies[0] && cookies[0].domain ? cookies[0].domain.replace(/^\./, '') : null;
+                        if (firstDomain) {
+                            const gotoRoot = `https://${firstDomain}/`;
+                            await page.goto(gotoRoot, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                        }
+                    } catch (e) {
+                        // no bloquear si la navegación inicial falla
+                    }
+
+                    // Aplicar cookies y luego verificar cuáles quedaron aplicadas
+                    try {
+                        await page.setCookie(...cookies);
+                        console.log(`Cookies cargadas desde ${cookiesFile} (count=${cookies.length})`);
+                        const applied = await page.cookies();
+                        console.log('Cookies aplicadas en la página:', applied.map(a => `${a.name}@${a.domain}`).join(', '));
+                    } catch (e) {
+                        console.warn('Error aplicando cookies en la página:', e && e.message ? e.message : e);
+                    }
                 }
             }
         } catch (e) {
@@ -198,14 +228,19 @@ async function fetchStock(url = URL) {
         if (!loggedIn) {
             console.warn('Advertencia: no parece haber una sesión iniciada en Steam (no se detectó usuario ni cookie de sesión).');
             if (process.env.FAIL_IF_NOT_LOGGED === 'true') {
-                console.error('FAIL_IF_NOT_LOGGED=true: saliendo con código 4.');
+                console.error('FAIL_IF_NOT_LOGGED=true: lanzando error NotLoggedIn.');
                 try { await browser.close(); } catch (e) {}
-                process.exitCode = 4;
-                return [];
+                const err = new Error('NotLoggedIn: no session detected');
+                err.code = 'NOT_LOGGED_IN';
+                throw err;
             }
         }
     } catch (e) {
-        // no bloquear por fallos de detección
+        // Si lanzamos explícitamente el error de 'NOT_LOGGED_IN', re-lanzarlo
+        if (e && (e.code === 'NOT_LOGGED_IN' || (typeof e.message === 'string' && e.message.indexOf('NotLoggedIn') === 0))) {
+            throw e;
+        }
+        // no bloquear por otros fallos de detección
         console.warn('Error durante la comprobación de sesión:', e && e.message ? e.message : e);
     }
 
