@@ -57,7 +57,9 @@ async function notifyTelegram(title, message) {
       log('No hay stock en esta comprobación.');
       const duration = Date.now() - startedAt;
       log('Duración de ejecución (ms):', duration);
-      process.exitCode = 1;
+      // No hay stock: considerar esto como ejecución correcta (exit code 0)
+      // para evitar que GitHub Actions marque el run como fallo por ausencia de stock.
+      process.exitCode = 0;
     }
   } catch (err) {
     log('Error durante la comprobación:', err && err.message ? err.message : err);
