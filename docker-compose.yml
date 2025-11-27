@@ -1,0 +1,17 @@
+services:
+  refresh:
+    build: .
+    image: sd_refresh_image
+    container_name: sd_refresh
+    env_file:
+      - .env
+    environment:
+      - USER_DATA_DIR=/usr/src/app/data
+    volumes:
+      - sd_data:/usr/src/app/data
+    restart: unless-stopped
+    tty: true
+
+volumes:
+  sd_data:
+    driver: local
