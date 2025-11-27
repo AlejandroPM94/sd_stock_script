@@ -8,3 +8,4 @@ node_modules/
 # Local environment file (contains secrets)
 .env
 watch_log.txt
+debug
