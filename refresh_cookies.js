@@ -12,16 +12,14 @@ try {
 } catch (e) {
   puppeteerExtra = null;
 }
-const sodium = require('libsodium-wrappers');
+// removed libsodium/upload-to-github code: this service now persists cookies locally only
 const { Telegraf } = require('telegraf');
 const utils = require('./lib/utils');
+const { fetchStock } = require('./sd_stock_script');
 
 // Config
 const COOKIES_FILE = process.env.COOKIES_FILE || path.join(__dirname, 'cookies.json');
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_OWNER = process.env.GITHUB_OWNER;
-const GITHUB_REPO = process.env.GITHUB_REPO;
-const GITHUB_SECRET_NAME = process.env.GITHUB_SECRET_NAME || 'STEAM_COOKIES';
+// GitHub-related configuration removed: this container persists cookies locally.
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_ID = process.env.TELEGRAM_ADMIN_ID;
 const REFRESH_TIMEOUT_MS = parseInt(process.env.REFRESH_TIMEOUT_MS || '30000', 10);
@@ -44,23 +42,7 @@ function isAdminFromCtx(ctx) {
   return String(from) === String(TELEGRAM_ADMIN_ID);
 }
 
-async function uploadSecretToGitHub(secretName, valueBase64) {
-  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) throw new Error('Faltan GITHUB_TOKEN/GITHUB_OWNER/GITHUB_REPO en .env');
-  await sodium.ready;
-  const keyResp = await axios.get(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/secrets/public-key`, {
-    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' }
-  });
-  const { key, key_id } = keyResp.data;
-  const pubKey = sodium.from_base64(key, sodium.base64_variants.ORIGINAL);
-  const sealed = sodium.crypto_box_seal(Buffer.from(valueBase64, 'utf8'), pubKey);
-  const encrypted_value = Buffer.from(sealed).toString('base64');
-  await axios.put(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/secrets/${secretName}`, {
-    encrypted_value,
-    key_id
-  }, {
-    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' }
-  });
-}
+// upload to GitHub removed: cookies are persisted locally in `COOKIES_FILE`.
 
 async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone = () => Promise.resolve(), sendDebug = async () => {}) {
   const headless = (process.env.REFRESH_HEADLESS === 'true');
@@ -70,7 +52,46 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
 
   const reuseBrowser = BROWSER_REUSE && Boolean(USER_DATA_DIR || process.env.BROWSER_REUSE);
   const useExtra = !!(puppeteerExtra && process.env.REFRESH_TRY_HEADLESS_LOGIN === 'true');
-  const browser = await utils.getOrLaunchBrowser({ puppeteer, puppeteerExtra, launchOptions, usePuppeteerExtra: useExtra, reuse: reuseBrowser });
+  let browser;
+  try {
+    browser = await utils.getOrLaunchBrowser({ puppeteer, puppeteerExtra, launchOptions, usePuppeteerExtra: useExtra, reuse: reuseBrowser });
+  } catch (errLaunch) {
+    const msg = (errLaunch && (errLaunch.message || String(errLaunch))).toLowerCase();
+    // Detect common profile-in-use errors from Chromium/puppeteer
+    if (msg.includes('profile appears to be in use') || msg.includes('the browser is already running') || msg.includes('process_singleton_posix') || msg.includes('code: 21')) {
+      sendProgress('Perfil de Chrome en uso o bloqueado. Intentando login alternativo en perfil temporal...');
+      try {
+        const ok = await autoLoginUsingCredentials(sendDebug);
+        if (ok) {
+          // read cookies file written by autoLoginUsingCredentials
+          try {
+            const raw = fs.readFileSync(COOKIES_FILE, 'utf8');
+            const cookies = JSON.parse(raw || '[]');
+            return { loggedIn: true, cookies };
+          } catch (e) {
+            // if reading fails, still return success boolean
+            return { loggedIn: true, cookies: [] };
+          }
+        }
+      } catch (e) {
+        // fall through to try temp profile
+      }
+
+      // As a last resort, try launching Chromium with a temporary userDataDir
+      try {
+        const tmp = require('os').tmpdir();
+        const tmpProfile = path.join(tmp, 'sd_stock_profile_fallback_' + Date.now());
+        launchOptions.userDataDir = tmpProfile;
+        sendProgress('Intentando lanzar Chromium con perfil temporal: ' + tmpProfile);
+        browser = await utils.getOrLaunchBrowser({ puppeteer, puppeteerExtra, launchOptions, usePuppeteerExtra: useExtra, reuse: false });
+      } catch (e2) {
+        // rethrow original error if fallback also failed
+        throw errLaunch;
+      }
+    } else {
+      throw errLaunch;
+    }
+  }
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36');
 
@@ -174,9 +195,20 @@ async function autoLoginUsingCredentials(sendDebug = null) {
     const cookies = await page.cookies();
     try { fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2)); } catch (e) {}
     try { await browser.close(); } catch (e) {}
+    // cleanup temporary profile directory if it was created
+    try {
+      if (tmpProfile && tmpProfile.indexOf('sd_stock_autologin_profile_') !== -1) {
+        fs.rmSync(tmpProfile, { recursive: true, force: true });
+      }
+    } catch (_) {}
     return cookies && cookies.length > 0;
   } catch (e) {
     try { if (browser) await browser.close(); } catch (_) {}
+    try {
+      if (tmpProfile && tmpProfile.indexOf('sd_stock_autologin_profile_') !== -1) {
+        fs.rmSync(tmpProfile, { recursive: true, force: true });
+      }
+    } catch (_) {}
     return false;
   }
 }
@@ -229,10 +261,12 @@ bot.command('refresh_cookies', async (ctx) => {
     if (!cookies || cookies.length === 0) return sendProgress('No se obtuvieron cookies tras el intento de login.');
     const steamCookies = cookies.filter(c => /steam|steampowered/i.test(c.domain));
     const payload = JSON.stringify(steamCookies, null, 2);
-    sendProgress('Subiendo cookies a GitHub (secret)...');
-    const base64 = Buffer.from(payload).toString('base64');
-    await uploadSecretToGitHub(GITHUB_SECRET_NAME, base64);
-    sendProgress('Cookies guardadas y secret subido correctamente.');
+    try {
+      fs.writeFileSync(COOKIES_FILE, payload);
+      sendProgress(`Cookies guardadas localmente en ${COOKIES_FILE}`);
+    } catch (e) {
+      sendProgress('Cookies obtenidas pero no se pudo escribir el archivo local de cookies: ' + (e && e.message));
+    }
   } catch (err) {
     console.error(err);
     sendProgress('Error durante el proceso: ' + (err && err.message ? err.message : String(err)));
@@ -258,9 +292,38 @@ bot.command('done', (ctx) => {
 });
 
 bot.command('help', (ctx) => {
-  ctx.reply('/refresh_cookies — Inicia login y sube cookies a GitHub\n/status — Muestra estado del fichero de cookies\n/done — Indica que has terminado el login manual en navegador (para modo no-headless)');
+  ctx.reply('/refresh_cookies — Inicia login y guarda cookies localmente\n/status — Muestra estado del fichero de cookies\n/done — Indica que has terminado el login manual en navegador (para modo no-headless)');
 });
 
+// Send logs to admin: if file is small enough send as document, otherwise send tail
+bot.command(['logs', 'send_logs'], async (ctx) => {
+  if (!isAdminFromCtx(ctx)) return ctx.reply('No estás autorizado para usar este comando.');
+  try {
+    if (!fs.existsSync(LOG_FILE)) return ctx.reply(`No se encontró el fichero de logs en ${LOG_FILE}`);
+    const text = fs.readFileSync(LOG_FILE, 'utf8');
+    const parts = (ctx.message && ctx.message.text) ? ctx.message.text.trim().split(/\s+/) : [];
+    const requestedLines = parts[1] ? Math.max(1, parseInt(parts[1], 10) || 200) : 200;
+    const lines = text.split(/\r?\n/);
+    const start = Math.max(0, lines.length - requestedLines);
+    const tailLines = lines.slice(start).join('\n');
+    const header = `Últimas ${Math.min(requestedLines, lines.length)} líneas de ${LOG_FILE} (mostrando ${lines.length - start}):`;
+    await ctx.reply(header);
+
+    // Telegram max message size ~4096 characters. Use a safe chunk size.
+    const CHUNK_SIZE = 3800;
+    for (let i = 0; i < tailLines.length; i += CHUNK_SIZE) {
+      const chunk = tailLines.slice(i, i + CHUNK_SIZE);
+      // send as plain text (monospace not strictly necessary)
+      await ctx.reply(chunk);
+    }
+  } catch (e) {
+    console.error('Error enviando logs:', e && e.stack ? e.stack : e);
+    try { await ctx.reply('Error al enviar logs: ' + (e && e.message)); } catch (_) {}
+  }
+});
+
+// Cleanup locks from previous runs before starting the bot
+try { cleanupProfileLocks(); } catch (e) { console.error('Error during initial cleanup:', e && e.message); }
 bot.launch().then(() => console.log('Bot de Telegram iniciado (telegraf).'));
 
 // Graceful shutdown
@@ -271,4 +334,171 @@ process.on('unhandledRejection', (reason) => { console.error('Unhandled Rejectio
 process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err && err.stack ? err.stack : err); });
 
 module.exports = { performLoginAndSaveCookies, autoLoginUsingCredentials };
+// ======= Periodic stock checker (runs inside the same container) =======
+// Behavior: every CHECK_INTERVAL_MINUTES it runs `fetchStock()`; if a login/session
+// failure is detected it will try `performLoginAndSaveCookies()` automatically.
+// If auto-login fails it will notify the admin via Telegram.
+
+const CHECK_INTERVAL_MINUTES = parseInt(process.env.CHECK_INTERVAL_MINUTES || '5', 10);
+const TELEGRAM_NOTIFY_CHAT = process.env.TELEGRAM_CHAT_ID || TELEGRAM_ADMIN_ID;
+const LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'watch_log.txt');
+
+// Max document size safe to send via Telegram bot (approx). If larger, we'll send a tail.
+const TELEGRAM_MAX_DOC_BYTES = 48 * 1024 * 1024; // 48 MB
+
+// Ensure the log file exists (append-only for this process)
+try { fs.appendFileSync(LOG_FILE, ''); } catch (e) {}
+
+// Helper to append a timestamped line synchronously
+function writeLogLine(text) {
+  const line = `[${new Date().toISOString()}] ${text}\n`;
+  try { fs.appendFileSync(LOG_FILE, line); } catch (e) {}
+}
+
+// Override console.log and console.error so logs go to watch_log.txt as well
+const _origConsoleLog = console.log.bind(console);
+const _origConsoleError = console.error.bind(console);
+console.log = (...args) => {
+  const text = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  writeLogLine(text);
+  _origConsoleLog(...args);
+};
+console.error = (...args) => {
+  const text = args.map(a => (a && a.stack) ? a.stack : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  writeLogLine(text);
+  _origConsoleError(...args);
+};
+
+// Cleanup Chromium lock files in USER_DATA_DIR to avoid 'profile in use' after restart
+function cleanupProfileLocks() {
+  try {
+    const dir = USER_DATA_DIR || path.join(__dirname, 'data');
+    if (!dir) return;
+    if (!fs.existsSync(dir)) return;
+    writeLogLine('Cleaning Chromium lock files in ' + dir);
+    const walk = (p) => {
+      let names = [];
+      try { names = fs.readdirSync(p); } catch (e) { return; }
+      for (const name of names) {
+        const full = path.join(p, name);
+        try {
+          const stat = fs.statSync(full);
+          if (stat.isDirectory()) {
+            // Recurse into directories
+            walk(full);
+          }
+          // If filename matches common Chromium lock patterns, remove it
+          if (/^Singleton|SingletonLock|SingletonSocket|.*lock.*$/i.test(name)) {
+            try {
+              // Try relax permissions then remove
+              try { fs.chmodSync(full, 0o700); } catch (_) {}
+              try { fs.unlinkSync(full); writeLogLine('Unlinked lock file: ' + full); } catch (_) {
+                try { fs.rmSync(full, { recursive: true, force: true }); writeLogLine('Removed lock: ' + full); } catch (e) { writeLogLine('Could not remove lock: ' + full + ' (' + (e && e.message) + ')'); }
+              }
+            } catch (e) {}
+          }
+        } catch (e) { /* ignore */ }
+      }
+    };
+    walk(dir);
+  } catch (e) {
+    writeLogLine('Error limpiando locks: ' + (e && e.message));
+  }
+}
+
+async function notifyTelegramSimple(title, message) {
+  if (!TELEGRAM_NOTIFY_CHAT || !TELEGRAM_BOT_TOKEN) return;
+  try {
+    const text = `*${title}*\n${message}`;
+    await require('axios').post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: TELEGRAM_NOTIFY_CHAT,
+      text,
+      parse_mode: 'Markdown'
+    }, { timeout: 10000 });
+    console.log('Notificación enviada por Telegram:', title);
+  } catch (e) { console.warn('Error enviando Telegram:', e && e.message ? e.message : e); }
+}
+
+let checkerTimer = null;
+let isChecking = false;
+
+async function runCheckOnce() {
+  if (isChecking) return;
+  isChecking = true;
+  console.log(`[checker] Iniciando comprobación de stock (${new Date().toISOString()})`);
+  const startedAt = Date.now();
+  try {
+    const items = await fetchStock();
+    if (!items) {
+      console.warn('[checker] No se obtuvieron items — posible problema de sesión o de scraping. Intentando auto-login...');
+      const ok = await attemptAutoLoginAndNotify();
+      if (!ok) {
+        await notifyTelegramSimple('Auto-login fallido', 'El intento automático de login ha fallado. Revisa el contenedor.');
+      }
+      return;
+    }
+    const available = items.filter(i => !/sin stock/i.test(i.availability));
+    if (available.length > 0) {
+      const msg = `${available.length} artículo(s) posiblemente en stock.`;
+      console.log('[checker] Stock detectado:', msg);
+      await notifyTelegramSimple('Stock detectado', msg + '\n' + available.map(a => `${a.title} — ${a.price || 'precio desconocido'}`).join('\n'));
+    } else {
+      console.log('[checker] No hay stock en esta comprobación.');
+    }
+    const durationSeconds = ((Date.now() - startedAt) / 1000).toFixed(2);
+    console.log(`[checker] Duración de ejecución (s): ${durationSeconds}`);
+  } catch (err) {
+    console.error('[checker] Error durante la comprobación:', err && err.message ? err.message : err);
+    // On error, try to auto-login and notify if it fails
+    const ok = await attemptAutoLoginAndNotify();
+    if (!ok) await notifyTelegramSimple('Error crítico', `Error al comprobar stock: ${(err && err.message) || String(err)}`);
+  } finally {
+    isChecking = false;
+  }
+}
+
+async function attemptAutoLoginAndNotify() {
+  try {
+    console.log('[checker] Ejecutando performLoginAndSaveCookies para intentar renovar sesión...');
+    try {
+      const { loggedIn, cookies } = await performLoginAndSaveCookies((t) => console.log('[checker] ' + t));
+      if (loggedIn) {
+        console.log('[checker] Auto-login OK — cookies guardadas.');
+        await notifyTelegramSimple('Auto-login exitoso', 'He renovado la sesión y actualizado las cookies.');
+        return true;
+      }
+    } catch (e) {
+      console.warn('[checker] performLoginAndSaveCookies arrojó excepción:', e && e.message ? e.message : e);
+    }
+    // Fallback: try autoLoginUsingCredentials (visible flow or stealth)
+    const ok = await autoLoginUsingCredentials(async (png, html) => {
+      if (DEBUG_MODE) {
+        // try to send debug artifacts to admin
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(png)) await bot.telegram.sendDocument(TELEGRAM_NOTIFY_CHAT, { source: png });
+          if (fs.existsSync(html)) await bot.telegram.sendDocument(TELEGRAM_NOTIFY_CHAT, { source: html });
+        } catch (e) { /* ignore */ }
+      }
+    });
+    if (ok) {
+      await notifyTelegramSimple('Auto-login exitoso', 'Auto-login alternativo completado y cookies guardadas.');
+      return true;
+    }
+    console.warn('[checker] Auto-login no logró renovar la sesión.');
+    return false;
+  } catch (e) {
+    console.error('[checker] Error durante intento de auto-login:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
+// Start periodic checks after bot is launched
+setTimeout(() => {
+  // run immediately once
+  runCheckOnce();
+  // schedule interval
+  checkerTimer = setInterval(runCheckOnce, CHECK_INTERVAL_MINUTES * 60 * 1000);
+  console.log(`[checker] Programado cada ${CHECK_INTERVAL_MINUTES} minutos.`);
+}, 2000);
 // end of file
