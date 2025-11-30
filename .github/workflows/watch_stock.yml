@@ -1,5 +1,11 @@
 name: Watch Steam Deck Stock
 
+on:
+  schedule:
+    # runs every 5 minutes — ajusta según prefieras
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
 jobs:
   run-watcher:
     runs-on: ubuntu-latest
