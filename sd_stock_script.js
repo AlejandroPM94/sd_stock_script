@@ -9,7 +9,14 @@ async function fetchStock(url = URL) {
     const headlessEnv = process.env.HEADLESS; // 'true'|'false'
     const headless = headlessEnv ? (headlessEnv === 'true' || headlessEnv === '1') : true;
 
-    const launchOptions = { args: ['--no-sandbox', '--disable-setuid-sandbox'], headless };
+    const launchOptions = { args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--lang=es-ES,es',
+        '--window-size=1366,768'
+    ], headless };
     if (userDataDir) launchOptions.userDataDir = userDataDir;
     // Permitir especificar un ejecutable de Chrome/Chromium (útil para usar perfil de Chrome real)
     const chromePath = process.env.CHROME_PATH || process.env.CHROME_EXECUTABLE || process.env.CHROME_BIN;

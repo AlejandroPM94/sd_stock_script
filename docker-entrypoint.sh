@@ -37,5 +37,10 @@ if [ -f "$DIR/DevToolsActivePort" ]; then
 fi
 
 echo "[entrypoint] Starting command: $@"
-
-exec "$@"
+# If USE_XVFB=true, run the command under a virtual X server to avoid headless detection
+if [ "${USE_XVFB}" = "true" ]; then
+  echo "[entrypoint] USE_XVFB=true — ejecutando comando con xvfb-run"
+  exec xvfb-run -a "$@"
+else
+  exec "$@"
+fi

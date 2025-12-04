@@ -46,7 +46,15 @@ function isAdminFromCtx(ctx) {
 
 async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone = () => Promise.resolve(), sendDebug = async () => {}) {
   const headless = (process.env.REFRESH_HEADLESS === 'true');
-  const launchOptions = { headless, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+  const commonArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled',
+    '--lang=es-ES,es',
+    '--window-size=1366,768'
+  ];
+  const launchOptions = { headless, args: commonArgs };
   if (process.env.CHROME_PATH) launchOptions.executablePath = process.env.CHROME_PATH;
   if (USER_DATA_DIR) launchOptions.userDataDir = USER_DATA_DIR;
 
@@ -177,7 +185,7 @@ async function autoLoginUsingCredentials(sendDebug = null) {
   const tmp = require('os').tmpdir();
   const tmpProfile = path.join(tmp, 'sd_stock_autologin_profile_' + Date.now());
   const tryHeadlessStealth = (process.env.REFRESH_HEADLESS === 'true' && process.env.REFRESH_TRY_HEADLESS_LOGIN === 'true' && puppeteerExtra);
-  const commonArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
+  const commonArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--lang=es-ES,es', '--window-size=1366,768'];
 
   const launchOptions = tryHeadlessStealth ? { headless: true, args: commonArgs } : { headless: false, args: commonArgs, userDataDir: tmpProfile };
   if (process.env.CHROME_PATH) launchOptions.executablePath = process.env.CHROME_PATH;

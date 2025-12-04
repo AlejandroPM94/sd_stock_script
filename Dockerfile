@@ -23,6 +23,7 @@ RUN apt-get update \
      libxss1 \
      libxtst6 \
      libgtk-3-0 \
+     xvfb \
      wget \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
