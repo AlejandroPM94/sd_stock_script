@@ -251,7 +251,9 @@ async function fetchStock(url = URL) {
         console.warn('Error durante la comprobación de sesión:', e && e.message ? e.message : e);
     }
 
-    await browser.close();
+    try { await browser.close(); } catch (e) {}
+    // Dar tiempo a Chromium para liberar el lock
+    await new Promise(r => setTimeout(r, 500));
     return results;
 }
 

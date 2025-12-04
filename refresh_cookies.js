@@ -58,6 +58,15 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
   if (process.env.CHROME_PATH) launchOptions.executablePath = process.env.CHROME_PATH;
   if (USER_DATA_DIR) launchOptions.userDataDir = USER_DATA_DIR;
 
+  // Limpiar locks antes de intentar lanzar el browser
+  if (USER_DATA_DIR && fs.existsSync(USER_DATA_DIR)) {
+    const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'];
+    for (const lockFile of lockFiles) {
+      const lockPath = path.join(USER_DATA_DIR, lockFile);
+      try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e) {}
+    }
+  }
+
   const reuseBrowser = BROWSER_REUSE && Boolean(USER_DATA_DIR || process.env.BROWSER_REUSE);
   const useExtra = !!(puppeteerExtra && process.env.REFRESH_TRY_HEADLESS_LOGIN === 'true');
   let browser;
@@ -172,10 +181,16 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
       throw new Error('Login fields not found (headless).');
     }
 
-    if (!reuseBrowser) await browser.close();
+    if (!reuseBrowser) {
+      try { await browser.close(); } catch (e) {}
+      // Dar tiempo a Chromium para liberar el lock
+      await new Promise(r => setTimeout(r, 1000));
+    }
     return { loggedIn, cookies };
   } catch (err) {
     try { await browser.close(); } catch (e) {}
+    // Dar tiempo a Chromium para liberar el lock
+    await new Promise(r => setTimeout(r, 1000));
     throw err;
   }
 }
@@ -467,6 +482,8 @@ async function runCheckOnce() {
 
 async function attemptAutoLoginAndNotify() {
   try {
+    // Esperar 2 segundos antes de intentar login para asegurar que se liberan locks
+    await new Promise(r => setTimeout(r, 2000));
     console.log('[checker] Ejecutando performLoginAndSaveCookies para intentar renovar sesión...');
     try {
       const { loggedIn, cookies } = await performLoginAndSaveCookies((t) => console.log('[checker] ' + t));
