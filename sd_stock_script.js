@@ -2,6 +2,8 @@ const puppeteer = require('puppeteer');
 
 const URL = 'https://store.steampowered.com/sale/steamdeckrefurbished';
 
+const PAGE_TIMEOUT_MS = parseInt(process.env.PAGE_TIMEOUT_MS || '60000', 10);
+
 async function fetchStock(url = URL) {
     // Opciones para soporte de sesión
     const userDataDir = process.env.USER_DATA_DIR; // si se proporciona, Puppeteer usará este perfil (permite sesión persistente)
@@ -14,9 +16,12 @@ async function fetchStock(url = URL) {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-blink-features=AutomationControlled',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
         '--lang=es-ES,es',
         '--window-size=1366,768'
-    ], headless };
+    ], headless, timeout: PAGE_TIMEOUT_MS, protocolTimeout: PAGE_TIMEOUT_MS };
     if (userDataDir) launchOptions.userDataDir = userDataDir;
     // Permitir especificar un ejecutable de Chrome/Chromium (útil para usar perfil de Chrome real)
     const chromePath = process.env.CHROME_PATH || process.env.CHROME_EXECUTABLE || process.env.CHROME_BIN;
@@ -24,6 +29,8 @@ async function fetchStock(url = URL) {
 
     const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(PAGE_TIMEOUT_MS);
+    page.setDefaultTimeout(PAGE_TIMEOUT_MS);
     // Si hay un fichero de cookies y no estamos usando userDataDir, intentar cargar cookies
     if (!userDataDir) {
         try {
@@ -73,7 +80,12 @@ async function fetchStock(url = URL) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36');
     const targetUrl = url || URL;
     console.log('Navegando a:', targetUrl);
-    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    try {
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS });
+    } catch (e) {
+        // En hardware lento (RasPi) relajar la condición y reintentar con domcontentloaded
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
+    }
     // Si se desea iniciar sesión manualmente, soportar modo interactivo:
     // - si se define WAIT_SELECTOR, esperará a ese selector (útil para detectar elemento de cuenta)
     // - si se define WAIT_FOR_LOGIN=true, esperará a que el usuario pulse ENTER en la terminal
@@ -83,7 +95,7 @@ async function fetchStock(url = URL) {
             console.log('Esperando selector de login:', waitSelector);
             await page.waitForSelector(waitSelector, { timeout: 120000 });
             console.log('Selector detectado, continuando.');
-            await page.reload({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+            await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
         } catch (e) {
             console.warn('No se detectó el selector dentro del tiempo:', e && e.message ? e.message : e);
         }
@@ -96,7 +108,7 @@ async function fetchStock(url = URL) {
                 resolve();
             });
         });
-        await page.reload({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+        await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
     }
 
     // Esperar selectores comunes de items (si existen)
@@ -234,13 +246,11 @@ async function fetchStock(url = URL) {
         }
         if (!loggedIn) {
             console.warn('Advertencia: no parece haber una sesión iniciada en Steam (no se detectó usuario ni cookie de sesión).');
-            if (process.env.FAIL_IF_NOT_LOGGED === 'true') {
-                console.error('FAIL_IF_NOT_LOGGED=true: lanzando error NotLoggedIn.');
-                try { await browser.close(); } catch (e) {}
-                const err = new Error('NotLoggedIn: no session detected');
-                err.code = 'NOT_LOGGED_IN';
-                throw err;
-            }
+            // Siempre lanzar error para que el checker automático intente renovar cookies
+            try { await browser.close(); } catch (e) {}
+            const err = new Error('NotLoggedIn: no session detected');
+            err.code = 'NOT_LOGGED_IN';
+            throw err;
         }
     } catch (e) {
         // Si lanzamos explícitamente el error de 'NOT_LOGGED_IN', re-lanzarlo

@@ -22,8 +22,8 @@ const COOKIES_FILE = process.env.COOKIES_FILE || path.join(__dirname, 'cookies.j
 // GitHub-related configuration removed: this container persists cookies locally.
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_ID = process.env.TELEGRAM_ADMIN_ID;
-const REFRESH_TIMEOUT_MS = parseInt(process.env.REFRESH_TIMEOUT_MS || '30000', 10);
-const REFRESH_DONE_TIMEOUT_MS = parseInt(process.env.REFRESH_DONE_TIMEOUT_MS || '60000', 10);
+const REFRESH_TIMEOUT_MS = parseInt(process.env.REFRESH_TIMEOUT_MS || '60000', 10);
+const REFRESH_DONE_TIMEOUT_MS = parseInt(process.env.REFRESH_DONE_TIMEOUT_MS || '90000', 10);
 const DEBUG_DIR = process.env.DEBUG_DIR || path.join(__dirname, 'debug');
 const USER_DATA_DIR = process.env.USER_DATA_DIR || process.env.PUPPETEER_USER_DATA_DIR;
 const DEBUG_MODE = (process.env.DEBUG === 'true');
@@ -51,10 +51,13 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-blink-features=AutomationControlled',
+    '--disable-gpu',
+    '--single-process',
+    '--no-zygote',
     '--lang=es-ES,es',
     '--window-size=1366,768'
   ];
-  const launchOptions = { headless, args: commonArgs };
+  const launchOptions = { headless, args: commonArgs, timeout: REFRESH_TIMEOUT_MS, protocolTimeout: REFRESH_TIMEOUT_MS };
   if (process.env.CHROME_PATH) launchOptions.executablePath = process.env.CHROME_PATH;
   if (USER_DATA_DIR) launchOptions.userDataDir = USER_DATA_DIR;
 
@@ -65,6 +68,11 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
       const lockPath = path.join(USER_DATA_DIR, lockFile);
       try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e) {}
     }
+    // Matar procesos chromium huérfanos que dejen el perfil bloqueado (ARM/QEMU)
+    try {
+      require('child_process').execSync('pkill -9 chromium || true', { stdio: 'ignore' });
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) {}
   }
 
   const reuseBrowser = BROWSER_REUSE && Boolean(USER_DATA_DIR || process.env.BROWSER_REUSE);
@@ -202,7 +210,9 @@ async function autoLoginUsingCredentials(sendDebug = null) {
   const tryHeadlessStealth = (process.env.REFRESH_HEADLESS === 'true' && process.env.REFRESH_TRY_HEADLESS_LOGIN === 'true' && puppeteerExtra);
   const commonArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--lang=es-ES,es', '--window-size=1366,768'];
 
-  const launchOptions = tryHeadlessStealth ? { headless: true, args: commonArgs } : { headless: false, args: commonArgs, userDataDir: tmpProfile };
+  const launchOptions = tryHeadlessStealth
+    ? { headless: true, args: commonArgs, timeout: REFRESH_TIMEOUT_MS, protocolTimeout: REFRESH_TIMEOUT_MS }
+    : { headless: false, args: commonArgs, userDataDir: tmpProfile, timeout: REFRESH_TIMEOUT_MS, protocolTimeout: REFRESH_TIMEOUT_MS };
   if (process.env.CHROME_PATH) launchOptions.executablePath = process.env.CHROME_PATH;
 
   const browser = await utils.getOrLaunchBrowser({ puppeteer, puppeteerExtra, launchOptions, usePuppeteerExtra: tryHeadlessStealth, reuse: false });

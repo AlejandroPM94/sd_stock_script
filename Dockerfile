@@ -24,6 +24,7 @@ RUN apt-get update \
      libxtst6 \
      libgtk-3-0 \
      xvfb \
+    xauth \
      wget \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
