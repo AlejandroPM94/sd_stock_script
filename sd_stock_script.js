@@ -16,9 +16,6 @@ async function fetchStock(url = URL) {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-blink-features=AutomationControlled',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
         '--lang=es-ES,es',
         '--window-size=1366,768'
     ], headless, timeout: PAGE_TIMEOUT_MS, protocolTimeout: PAGE_TIMEOUT_MS };
@@ -56,7 +53,7 @@ async function fetchStock(url = URL) {
                         const firstDomain = cookies[0] && cookies[0].domain ? cookies[0].domain.replace(/^\./, '') : null;
                         if (firstDomain) {
                             const gotoRoot = `https://${firstDomain}/`;
-                            await page.goto(gotoRoot, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                            await page.goto(gotoRoot, { waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {});
                         }
                     } catch (e) {
                         // no bloquear si la navegación inicial falla
@@ -81,7 +78,7 @@ async function fetchStock(url = URL) {
     const targetUrl = url || URL;
     console.log('Navegando a:', targetUrl);
     try {
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS });
+        await page.goto(targetUrl, { waitUntil: 'networkidle0', timeout: PAGE_TIMEOUT_MS });
     } catch (e) {
         // En hardware lento (RasPi) relajar la condición y reintentar con domcontentloaded
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS }).catch(() => {});

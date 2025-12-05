@@ -23,7 +23,7 @@ const COOKIES_FILE = process.env.COOKIES_FILE || path.join(__dirname, 'cookies.j
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ADMIN_ID = process.env.TELEGRAM_ADMIN_ID;
 const REFRESH_TIMEOUT_MS = parseInt(process.env.REFRESH_TIMEOUT_MS || '60000', 10);
-const REFRESH_DONE_TIMEOUT_MS = parseInt(process.env.REFRESH_DONE_TIMEOUT_MS || '90000', 10);
+const REFRESH_DONE_TIMEOUT_MS = parseInt(process.env.REFRESH_DONE_TIMEOUT_MS || '75000', 10);
 const DEBUG_DIR = process.env.DEBUG_DIR || path.join(__dirname, 'debug');
 const USER_DATA_DIR = process.env.USER_DATA_DIR || process.env.PUPPETEER_USER_DATA_DIR;
 const DEBUG_MODE = (process.env.DEBUG === 'true');
@@ -51,9 +51,6 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-blink-features=AutomationControlled',
-    '--disable-gpu',
-    '--single-process',
-    '--no-zygote',
     '--lang=es-ES,es',
     '--window-size=1366,768'
   ];
