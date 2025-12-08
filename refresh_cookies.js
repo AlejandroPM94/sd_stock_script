@@ -44,12 +44,15 @@ function isAdminFromCtx(ctx) {
 
 // upload to GitHub removed: cookies are persisted locally in `COOKIES_FILE`.
 
-async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone = () => Promise.resolve(), sendDebug = async () => {}) {
+async function performLoginAndSaveCookies(sendProgress = () => { }, waitForDone = () => Promise.resolve(), sendDebug = async () => { }) {
   const headless = (process.env.REFRESH_HEADLESS === 'true');
   const commonArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
     '--disable-blink-features=AutomationControlled',
     '--lang=es-ES,es',
     '--window-size=1366,768'
@@ -63,13 +66,13 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
     const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'];
     for (const lockFile of lockFiles) {
       const lockPath = path.join(USER_DATA_DIR, lockFile);
-      try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e) {}
+      try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e) { }
     }
     // Matar procesos chromium huérfanos que dejen el perfil bloqueado (ARM/QEMU)
     try {
       require('child_process').execSync('pkill -9 chromium || true', { stdio: 'ignore' });
       await new Promise(r => setTimeout(r, 500));
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const reuseBrowser = BROWSER_REUSE && Boolean(USER_DATA_DIR || process.env.BROWSER_REUSE);
@@ -119,7 +122,7 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
 
   try {
     await page.goto('https://store.steampowered.com/login/', { waitUntil: 'networkidle2', timeout: REFRESH_TIMEOUT_MS });
-    await utils.waitForLoginUI(page, REFRESH_TIMEOUT_MS).catch(() => {});
+    await utils.waitForLoginUI(page, REFRESH_TIMEOUT_MS).catch(() => { });
 
     const usernameSelectors = '#input_username, input[name="username"], input#username, input[name="accountname"], input[type="text"]';
     const passwordSelectors = '#input_password, input[name="password"], input#password, input[type="password"]';
@@ -128,7 +131,7 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
     const typedPassHandle = await utils.findBestAndType(page, passwordSelectors, process.env.STEAM_PASSWORD || '');
 
     if (typedPassHandle) {
-      try { await utils.submitLogin(page, typedPassHandle, sendDebug, DEBUG_DIR); } catch (e) {}
+      try { await utils.submitLogin(page, typedPassHandle, sendDebug, DEBUG_DIR); } catch (e) { }
     } else {
       // fallback simple fill
       await (async function fillFormFallback(root) {
@@ -136,25 +139,25 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
           const forms = await node.$$('form');
           for (const form of forms) {
             let txt = '';
-            try { txt = (await node.evaluate(f => f.innerText, form)).trim(); } catch (e) {}
+            try { txt = (await node.evaluate(f => f.innerText, form)).trim(); } catch (e) { }
             if (/iniciar sesión|sign in/i.test(txt) || await form.$('button[type="submit"]')) {
               const textInput = await form.$('input[type="text"], input:not([type])');
               const passInput = await form.$('input[type="password"]');
-              try { if (textInput) await textInput.type(process.env.STEAM_USERNAME || '', { delay: 50 }); } catch (e) {}
-              try { if (passInput) await passInput.type(process.env.STEAM_PASSWORD || '', { delay: 50 }); } catch (e) {}
+              try { if (textInput) await textInput.type(process.env.STEAM_USERNAME || '', { delay: 50 }); } catch (e) { }
+              try { if (passInput) await passInput.type(process.env.STEAM_PASSWORD || '', { delay: 50 }); } catch (e) { }
               return true;
             }
           }
           return false;
         }
         if (await inspect(root)) return true;
-        for (const frame of root.frames()) { try { if (await inspect(frame)) return true; } catch (e) {} }
+        for (const frame of root.frames()) { try { if (await inspect(frame)) return true; } catch (e) { } }
         return false;
       })(page);
     }
 
     // global submit fallback
-    try { await utils.submitLogin(page, null, sendDebug, DEBUG_DIR); } catch (e) {}
+    try { await utils.submitLogin(page, null, sendDebug, DEBUG_DIR); } catch (e) { }
 
     let loggedIn = false;
     try {
@@ -173,7 +176,7 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
             return selectors.some(s => !!document.querySelector(s));
           }, { timeout: 60000 });
           loggedIn = true;
-        } catch (e2) {}
+        } catch (e2) { }
       }
     }
 
@@ -181,19 +184,19 @@ async function performLoginAndSaveCookies(sendProgress = () => {}, waitForDone =
     try { fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2)); } catch (e) { console.warn('No se pudo escribir cookies:', e && e.message); }
 
     if (!loggedIn && headless) {
-      try { const { png, html } = await utils.saveDebugArtifacts(page, DEBUG_DIR); try { await sendDebug(png, html); } catch (e) {} } catch (e) {}
-      if (!reuseBrowser) try { await browser.close(); } catch (e) {}
+      try { const { png, html } = await utils.saveDebugArtifacts(page, DEBUG_DIR); try { await sendDebug(png, html); } catch (e) { } } catch (e) { }
+      if (!reuseBrowser) try { await browser.close(); } catch (e) { }
       throw new Error('Login fields not found (headless).');
     }
 
     if (!reuseBrowser) {
-      try { await browser.close(); } catch (e) {}
+      try { await browser.close(); } catch (e) { }
       // Dar tiempo a Chromium para liberar el lock
       await new Promise(r => setTimeout(r, 1000));
     }
     return { loggedIn, cookies };
   } catch (err) {
-    try { await browser.close(); } catch (e) {}
+    try { await browser.close(); } catch (e) { }
     // Dar tiempo a Chromium para liberar el lock
     await new Promise(r => setTimeout(r, 1000));
     throw err;
@@ -217,28 +220,28 @@ async function autoLoginUsingCredentials(sendDebug = null) {
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36');
   try {
     await page.goto('https://store.steampowered.com/login/', { waitUntil: 'networkidle2', timeout: REFRESH_TIMEOUT_MS });
-    await utils.waitForLoginUI(page, REFRESH_TIMEOUT_MS).catch(() => {});
+    await utils.waitForLoginUI(page, REFRESH_TIMEOUT_MS).catch(() => { });
     const usHandle = await utils.findBestAndType(page, '#input_username, input[name="username"], input[type="text"]', process.env.STEAM_USERNAME);
     const pwHandle = await utils.findBestAndType(page, '#input_password, input[name="password"], input[type="password"]', process.env.STEAM_PASSWORD);
-    if (pwHandle) { try { await utils.submitLogin(page, pwHandle, sendDebug, DEBUG_DIR); } catch (e) {} }
-    try { await page.waitForFunction(() => { const selectors = ['#account_pulldown .name', '.user_persona_name', '.persona_name', '.account_name']; return selectors.some(s => !!document.querySelector(s)); }, { timeout: REFRESH_DONE_TIMEOUT_MS }); } catch (e) {}
+    if (pwHandle) { try { await utils.submitLogin(page, pwHandle, sendDebug, DEBUG_DIR); } catch (e) { } }
+    try { await page.waitForFunction(() => { const selectors = ['#account_pulldown .name', '.user_persona_name', '.persona_name', '.account_name']; return selectors.some(s => !!document.querySelector(s)); }, { timeout: REFRESH_DONE_TIMEOUT_MS }); } catch (e) { }
     const cookies = await page.cookies();
-    try { fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2)); } catch (e) {}
-    try { await browser.close(); } catch (e) {}
+    try { fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2)); } catch (e) { }
+    try { await browser.close(); } catch (e) { }
     // cleanup temporary profile directory if it was created
     try {
       if (tmpProfile && tmpProfile.indexOf('sd_stock_autologin_profile_') !== -1) {
         fs.rmSync(tmpProfile, { recursive: true, force: true });
       }
-    } catch (_) {}
+    } catch (_) { }
     return cookies && cookies.length > 0;
   } catch (e) {
-    try { if (browser) await browser.close(); } catch (_) {}
+    try { if (browser) await browser.close(); } catch (_) { }
     try {
       if (tmpProfile && tmpProfile.indexOf('sd_stock_autologin_profile_') !== -1) {
         fs.rmSync(tmpProfile, { recursive: true, force: true });
       }
-    } catch (_) {}
+    } catch (_) { }
     return false;
   }
 }
@@ -283,7 +286,7 @@ bot.command('refresh_cookies', async (ctx) => {
     try {
       if (fs.existsSync(pngPath)) await ctx.replyWithDocument({ source: fs.createReadStream(pngPath) });
       if (fs.existsSync(htmlPath)) await ctx.replyWithDocument({ source: fs.createReadStream(htmlPath) });
-    } catch (e) { try { await ctx.reply('No se pudieron enviar los archivos de debug: ' + (e && e.message)); } catch (_) {} }
+    } catch (e) { try { await ctx.reply('No se pudieron enviar los archivos de debug: ' + (e && e.message)); } catch (_) { } }
   };
 
   try {
@@ -348,7 +351,7 @@ bot.command(['logs', 'send_logs'], async (ctx) => {
     }
   } catch (e) {
     console.error('Error enviando logs:', e && e.stack ? e.stack : e);
-    try { await ctx.reply('Error al enviar logs: ' + (e && e.message)); } catch (_) {}
+    try { await ctx.reply('Error al enviar logs: ' + (e && e.message)); } catch (_) { }
   }
 });
 
@@ -357,8 +360,8 @@ try { cleanupProfileLocks(); } catch (e) { console.error('Error during initial c
 bot.launch().then(() => console.log('Bot de Telegram iniciado (telegraf).'));
 
 // Graceful shutdown
-process.once('SIGINT', async () => { try { await utils.closeSharedBrowser(); } catch (e) {} process.exit(0); });
-process.once('SIGTERM', async () => { try { await utils.closeSharedBrowser(); } catch (e) {} process.exit(0); });
+process.once('SIGINT', async () => { try { await utils.closeSharedBrowser(); } catch (e) { } process.exit(0); });
+process.once('SIGTERM', async () => { try { await utils.closeSharedBrowser(); } catch (e) { } process.exit(0); });
 
 process.on('unhandledRejection', (reason) => { console.error('Unhandled Rejection:', reason); });
 process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err && err.stack ? err.stack : err); });
@@ -377,12 +380,12 @@ const LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'watch_log.txt');
 const TELEGRAM_MAX_DOC_BYTES = 48 * 1024 * 1024; // 48 MB
 
 // Ensure the log file exists (append-only for this process)
-try { fs.appendFileSync(LOG_FILE, ''); } catch (e) {}
+try { fs.appendFileSync(LOG_FILE, ''); } catch (e) { }
 
 // Helper to append a timestamped line synchronously
 function writeLogLine(text) {
   const line = `[${new Date().toISOString()}] ${text}\n`;
-  try { fs.appendFileSync(LOG_FILE, line); } catch (e) {}
+  try { fs.appendFileSync(LOG_FILE, line); } catch (e) { }
 }
 
 // Override console.log and console.error so logs go to watch_log.txt as well
@@ -421,11 +424,11 @@ function cleanupProfileLocks() {
           if (/^Singleton|SingletonLock|SingletonSocket|.*lock.*$/i.test(name)) {
             try {
               // Try relax permissions then remove
-              try { fs.chmodSync(full, 0o700); } catch (_) {}
+              try { fs.chmodSync(full, 0o700); } catch (_) { }
               try { fs.unlinkSync(full); writeLogLine('Unlinked lock file: ' + full); } catch (_) {
                 try { fs.rmSync(full, { recursive: true, force: true }); writeLogLine('Removed lock: ' + full); } catch (e) { writeLogLine('Could not remove lock: ' + full + ' (' + (e && e.message) + ')'); }
               }
-            } catch (e) {}
+            } catch (e) { }
           }
         } catch (e) { /* ignore */ }
       }

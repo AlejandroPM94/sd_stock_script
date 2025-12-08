@@ -26,6 +26,7 @@ RUN apt-get update \
      xvfb \
     xauth \
      wget \
+     dumb-init \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -67,5 +68,5 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Ensure entrypoint runs first to clean any leftover Chromium locks
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "refresh_cookies.js"]

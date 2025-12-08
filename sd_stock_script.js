@@ -11,14 +11,19 @@ async function fetchStock(url = URL) {
     const headlessEnv = process.env.HEADLESS; // 'true'|'false'
     const headless = headlessEnv ? (headlessEnv === 'true' || headlessEnv === '1') : true;
 
-    const launchOptions = { args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled',
-        '--lang=es-ES,es',
-        '--window-size=1366,768'
-    ], headless, timeout: PAGE_TIMEOUT_MS, protocolTimeout: PAGE_TIMEOUT_MS };
+    const launchOptions = {
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-blink-features=AutomationControlled',
+            '--lang=es-ES,es',
+            '--window-size=1366,768'
+        ], headless, timeout: PAGE_TIMEOUT_MS, protocolTimeout: PAGE_TIMEOUT_MS
+    };
     if (userDataDir) launchOptions.userDataDir = userDataDir;
     // Permitir especificar un ejecutable de Chrome/Chromium (útil para usar perfil de Chrome real)
     const chromePath = process.env.CHROME_PATH || process.env.CHROME_EXECUTABLE || process.env.CHROME_BIN;
@@ -53,7 +58,7 @@ async function fetchStock(url = URL) {
                         const firstDomain = cookies[0] && cookies[0].domain ? cookies[0].domain.replace(/^\./, '') : null;
                         if (firstDomain) {
                             const gotoRoot = `https://${firstDomain}/`;
-                            await page.goto(gotoRoot, { waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {});
+                            await page.goto(gotoRoot, { waitUntil: 'networkidle0', timeout: 10000 }).catch(() => { });
                         }
                     } catch (e) {
                         // no bloquear si la navegación inicial falla
@@ -81,7 +86,7 @@ async function fetchStock(url = URL) {
         await page.goto(targetUrl, { waitUntil: 'networkidle0', timeout: PAGE_TIMEOUT_MS });
     } catch (e) {
         // En hardware lento (RasPi) relajar la condición y reintentar con domcontentloaded
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS }).catch(() => { });
     }
     // Si se desea iniciar sesión manualmente, soportar modo interactivo:
     // - si se define WAIT_SELECTOR, esperará a ese selector (útil para detectar elemento de cuenta)
@@ -92,7 +97,7 @@ async function fetchStock(url = URL) {
             console.log('Esperando selector de login:', waitSelector);
             await page.waitForSelector(waitSelector, { timeout: 120000 });
             console.log('Selector detectado, continuando.');
-            await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
+            await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => { });
         } catch (e) {
             console.warn('No se detectó el selector dentro del tiempo:', e && e.message ? e.message : e);
         }
@@ -105,7 +110,7 @@ async function fetchStock(url = URL) {
                 resolve();
             });
         });
-        await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => {});
+        await page.reload({ waitUntil: 'networkidle2', timeout: PAGE_TIMEOUT_MS }).catch(() => { });
     }
 
     // Esperar selectores comunes de items (si existen)
@@ -134,7 +139,7 @@ async function fetchStock(url = URL) {
             }
             // fallback: buscar h2/h3
             const h = node.querySelector('h2,h3');
-            if (h) return (h.innerText||'').trim();
+            if (h) return (h.innerText || '').trim();
             return null;
         }
 
@@ -142,7 +147,7 @@ async function fetchStock(url = URL) {
             const priceText = (node.innerText || '').match(/\d+[\.,]\d{2}\s*€/);
             if (priceText) return priceText[0];
             const priceEl = node.querySelector('.discount_final_price, .price, .game_purchase_price, .search_price, .StoreSalePriceWidgetContainer, .StoreSalePriceWidgetContainer *');
-            if (priceEl) return (priceEl.innerText||'').trim();
+            if (priceEl) return (priceEl.innerText || '').trim();
             return null;
         }
 
@@ -150,7 +155,7 @@ async function fetchStock(url = URL) {
             const text = (container.innerText || '').trim();
             if (!text) continue;
 
-            const title = findTitleWithin(container) || (container.querySelector('a') ? (container.querySelector('a').innerText||'').trim() : null);
+            const title = findTitleWithin(container) || (container.querySelector('a') ? (container.querySelector('a').innerText || '').trim() : null);
             if (!title) continue;
             if (seen.has(title)) continue;
             seen.add(title);
@@ -162,7 +167,7 @@ async function fetchStock(url = URL) {
             // detectar botón o div con clase CartBtn
             const cartBtn = container.querySelector('.CartBtn, .cart_btn, .add_to_cart, .add_to_cart_button');
             if (cartBtn) {
-                const btnText = (cartBtn.innerText||'').trim();
+                const btnText = (cartBtn.innerText || '').trim();
                 if (/Sin existenci/i.test(btnText)) availability = 'sin stock';
                 else if (AVAILABLE_RE.test(btnText)) availability = 'en stock';
             }
@@ -180,8 +185,8 @@ async function fetchStock(url = URL) {
 
         if (items.length === 0) {
             // fallback: buscar botones de 'Sin existencias' y obtener sus ancestros
-            const buttons = Array.from(document.querySelectorAll('div')).filter(d => /(Sin existenci|Sin existencias)/i.test((d.innerText||'').trim()));
-            return buttons.slice(0,5).map(b => ({ title: document.title || 'Página', price: null, url: location.href, availability: 'sin stock (detected via button)' }));
+            const buttons = Array.from(document.querySelectorAll('div')).filter(d => /(Sin existenci|Sin existencias)/i.test((d.innerText || '').trim()));
+            return buttons.slice(0, 5).map(b => ({ title: document.title || 'Página', price: null, url: location.href, availability: 'sin stock (detected via button)' }));
         }
 
         return items;
@@ -198,7 +203,7 @@ async function fetchStock(url = URL) {
                 console.log('Cookies guardadas en', cookiesFile, `(userDataDir ${userDataDir ? 'usado' : 'no usado'})`);
                 const steamCookies = cookies.filter(c => /steam|steampowered/i.test(c.domain));
                 if (steamCookies.length) {
-                    console.log(`Se han guardado ${steamCookies.length} cookie(s) relacionadas con Steam. Ejemplos: ${steamCookies.slice(0,3).map(c=>c.name).join(', ')}`);
+                    console.log(`Se han guardado ${steamCookies.length} cookie(s) relacionadas con Steam. Ejemplos: ${steamCookies.slice(0, 3).map(c => c.name).join(', ')}`);
                 } else {
                     console.log('No se detectaron cookies de Steam en la lista guardada.');
                 }
@@ -244,7 +249,7 @@ async function fetchStock(url = URL) {
         if (!loggedIn) {
             console.warn('Advertencia: no parece haber una sesión iniciada en Steam (no se detectó usuario ni cookie de sesión).');
             // Siempre lanzar error para que el checker automático intente renovar cookies
-            try { await browser.close(); } catch (e) {}
+            try { await browser.close(); } catch (e) { }
             const err = new Error('NotLoggedIn: no session detected');
             err.code = 'NOT_LOGGED_IN';
             throw err;
@@ -258,7 +263,7 @@ async function fetchStock(url = URL) {
         console.warn('Error durante la comprobación de sesión:', e && e.message ? e.message : e);
     }
 
-    try { await browser.close(); } catch (e) {}
+    try { await browser.close(); } catch (e) { }
     // Dar tiempo a Chromium para liberar el lock
     await new Promise(r => setTimeout(r, 500));
     return results;
